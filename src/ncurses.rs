@@ -5,26 +5,11 @@ use bevy::prelude::{
 };
 use pancurses::{
     chtype, curs_set, endwin, getmouse, has_colors, init_pair, initscr, mousemask, noecho,
-    resize_term, start_color, COLOR_PAIR,
+    resize_term, start_color, ToChtype, COLOR_PAIR,
 };
 use std::ops::{Deref, DerefMut};
 
 pub use pancurses::Input;
-
-pub trait TryApply<T> {
-    fn try_apply(&self, f: impl FnOnce(&T));
-}
-
-impl<T> TryApply<T> for Option<T> {
-    fn try_apply(&self, f: impl FnOnce(&T)) {
-        match self {
-            None => {}
-            Some(value) => {
-                f(value);
-            }
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum Color {
@@ -39,6 +24,7 @@ pub enum Color {
 }
 
 impl Into<u8> for Color {
+    #[inline]
     fn into(self) -> u8 {
         match self {
             Color::Black => 0,
@@ -54,6 +40,7 @@ impl Into<u8> for Color {
 }
 
 impl Into<Color> for u8 {
+    #[inline]
     fn into(self) -> Color {
         match self {
             0 => Color::Black,
@@ -77,18 +64,21 @@ pub struct Window {
 impl Deref for Window {
     type Target = pancurses::Window;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.window
     }
 }
 
 impl DerefMut for Window {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.window
     }
 }
 
 impl Drop for Window {
+    #[inline]
     fn drop(&mut self) {
         endwin();
     }
@@ -146,12 +136,14 @@ pub struct Label {
 }
 
 impl Label {
+    #[inline]
     pub fn new(text: impl Into<String>) -> Self {
         Self { text: text.into() }
     }
 }
 
 impl Into<Label> for String {
+    #[inline]
     fn into(self) -> Label {
         Label { text: self }
     }
@@ -196,6 +188,7 @@ pub struct ButtonBundle {
 }
 
 impl ButtonBundle {
+    #[inline]
     pub fn new(text: impl Into<String>, position: impl Into<NPosition>) -> Self {
         Self {
             label: LabelBundle::new(text, position),
@@ -203,6 +196,7 @@ impl ButtonBundle {
         }
     }
 
+    #[inline]
     pub fn new_with(label: LabelBundle) -> Self {
         Self {
             label,
@@ -232,6 +226,7 @@ impl NColor {
 }
 
 impl Into<(Color, Color)> for NColor {
+    #[inline]
     fn into(self) -> (Color, Color) {
         let fg = (self.color & 7).into();
         let bg = ((self.color >> 4) & 7).into();
@@ -240,8 +235,30 @@ impl Into<(Color, Color)> for NColor {
 }
 
 impl Into<NColor> for (Color, Color) {
+    #[inline]
     fn into(self) -> NColor {
         NColor::new(self.0, self.1)
+    }
+}
+
+impl Into<u8> for NColor {
+    #[inline]
+    fn into(self) -> u8 {
+        self.color
+    }
+}
+
+impl Into<u8> for &NColor {
+    #[inline]
+    fn into(self) -> u8 {
+        self.color
+    }
+}
+
+impl ToChtype for NColor {
+    #[inline]
+    fn to_chtype(&self) -> chtype {
+        self.color as chtype
     }
 }
 
@@ -341,15 +358,22 @@ fn click_event_trigger(
     mut commands: Commands,
 ) {
     'events: for event in events.read() {
-        if let Input::KeyMouse = event.event {
-            if let Ok(mouse_event) = getmouse() {
-                for (entity, pos, size, _) in query.iter() {
-                    if check_bounds((mouse_event.x, mouse_event.y), pos, size) {
-                        commands.get_entity(entity).unwrap().trigger(ClickEvent);
-                        continue 'events;
-                    }
-                }
+        if event.event != Input::KeyMouse {
+            continue;
+        }
+
+        let m_event = getmouse();
+        if let Err(_) = m_event {
+            continue;
+        }
+
+        let mouse_event = m_event.unwrap();
+        for (entity, pos, size, _) in query.iter() {
+            if !check_bounds((mouse_event.x, mouse_event.y), pos, size) {
+                continue;
             }
+            commands.get_entity(entity).unwrap().trigger(ClickEvent);
+            continue 'events;
         }
     }
 }
@@ -364,20 +388,16 @@ fn update_label_size(mut query: Query<(&Label, &mut NSize), Changed<Label>>) {
     }
 }
 
-fn draw_label(query: Query<(&Label, &NPosition, Option<&NColor>)>, window: Res<Window>) {
-    for (label, position, maybe_color) in query.iter() {
-        maybe_color.try_apply(|c| {
-            window.attron(COLOR_PAIR(c.color as chtype));
-            if is_bold(c.color) {
-                window.attron(pancurses::A_BOLD);
-            }
-        });
+fn draw_label(query: Query<(&Label, &NPosition, &NColor)>, window: Res<Window>) {
+    for (label, position, color) in query.iter() {
+        window.attron(COLOR_PAIR(color.to_chtype()));
+        if is_bold(color.into()) {
+            window.attron(pancurses::A_BOLD);
+        }
         window.mvprintw(position.y as i32, position.x as i32, &label.text);
-        maybe_color.try_apply(|c| {
-            window.attroff(COLOR_PAIR(c.color as chtype));
-            if is_bold(c.color) {
-                window.attroff(pancurses::A_BOLD);
-            }
-        });
+        window.attroff(COLOR_PAIR(color.to_chtype()));
+        if is_bold(color.into()) {
+            window.attroff(pancurses::A_BOLD);
+        }
     }
 }
