@@ -1,6 +1,6 @@
 use bevy::app::Startup;
 use bevy::prelude::{App, Commands, Trigger};
-use n_tetris::ncurses::{ButtonBundle, ClickEvent, Color, LabelBundle, NColor, NcursesPlugin};
+use n_tetris::ncurses::{ButtonBundle, ClickEvent, Color, LabelBundle, NcursesPlugin};
 
 fn main() {
     App::new()
