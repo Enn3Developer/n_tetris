@@ -1,7 +1,7 @@
 use bevy::app::App;
 use bevy::prelude::{
-    AppExit, Bundle, Changed, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs,
-    Last, Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update,
+    AppExit, Changed, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs, Last,
+    Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update,
 };
 use pancurses::{
     chtype, curs_set, endwin, getmouse, has_colors, init_pair, initscr, mousemask, noecho,
@@ -9,6 +9,7 @@ use pancurses::{
 };
 use std::ops::{Deref, DerefMut};
 
+use crate::ui::{Clickable, Label};
 pub use pancurses::Input;
 
 #[derive(Debug)]
@@ -124,90 +125,6 @@ impl Into<NSize> for (u16, u16) {
             x: self.0,
             y: self.1,
         }
-    }
-}
-
-#[derive(Component)]
-pub struct Clickable;
-
-#[derive(Component, Default)]
-pub struct Label {
-    pub text: String,
-}
-
-impl Label {
-    #[inline]
-    pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into() }
-    }
-}
-
-impl Into<Label> for String {
-    #[inline]
-    fn into(self) -> Label {
-        Label { text: self }
-    }
-}
-
-#[derive(Default, Bundle)]
-pub struct LabelBundle {
-    label: Label,
-    position: NPosition,
-    color: NColor,
-}
-
-impl LabelBundle {
-    #[inline]
-    pub fn new(text: impl Into<String>, position: impl Into<NPosition>) -> Self {
-        Self::default().with_text(text).with_position(position)
-    }
-
-    #[inline]
-    pub fn with_text(mut self, text: impl Into<String>) -> Self {
-        self.label = text.into().into();
-        self
-    }
-
-    #[inline]
-    pub fn with_position(mut self, position: impl Into<NPosition>) -> Self {
-        self.position = position.into();
-        self
-    }
-
-    #[inline]
-    pub fn with_color(mut self, color: impl Into<NColor>) -> Self {
-        self.color = color.into();
-        self
-    }
-}
-
-#[derive(Bundle)]
-pub struct ButtonBundle {
-    pub label: LabelBundle,
-    clickable: Clickable,
-}
-
-impl ButtonBundle {
-    #[inline]
-    pub fn new(text: impl Into<String>, position: impl Into<NPosition>) -> Self {
-        Self {
-            label: LabelBundle::new(text, position),
-            clickable: Clickable,
-        }
-    }
-
-    #[inline]
-    pub fn new_with(label: LabelBundle) -> Self {
-        Self {
-            label,
-            clickable: Clickable,
-        }
-    }
-
-    #[inline]
-    pub fn with_color(mut self, color: impl Into<NColor>) -> Self {
-        self.label.color = color.into();
-        self
     }
 }
 
