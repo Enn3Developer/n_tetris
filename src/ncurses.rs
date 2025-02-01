@@ -1,13 +1,15 @@
 use bevy::app::App;
 use bevy::prelude::{
-    AppExit, Bundle, Commands, Component, Event, Last, Plugin, PostUpdate, PreUpdate, Query, Res,
-    Resource,
+    AppExit, Bundle, Changed, Commands, Component, Entity, EntityCommands, Event, EventReader,
+    IntoSystemConfigs, Last, Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update,
 };
 use pancurses::{
-    chtype, curs_set, endwin, has_colors, init_pair, initscr, mousemask, noecho, start_color,
-    COLOR_PAIR,
+    chtype, curs_set, endwin, getmouse, has_colors, init_pair, initscr, mousemask, noecho,
+    resize_term, start_color, COLOR_PAIR,
 };
 use std::ops::{Deref, DerefMut};
+
+pub use pancurses::Input;
 
 pub trait TryApply<T> {
     fn try_apply(&self, f: impl FnOnce(&T));
@@ -96,7 +98,12 @@ unsafe impl Sync for Window {}
 unsafe impl Send for Window {}
 
 #[derive(Event)]
-pub struct Click;
+pub struct ClickEvent;
+
+#[derive(Event)]
+pub struct InputEvent {
+    pub event: Input,
+}
 
 #[derive(Component, Default)]
 pub struct NPosition {
@@ -115,6 +122,25 @@ impl Into<NPosition> for (u16, u16) {
 }
 
 #[derive(Component)]
+pub struct NSize {
+    pub x: u16,
+    pub y: u16,
+}
+
+impl Into<NSize> for (u16, u16) {
+    #[inline]
+    fn into(self) -> NSize {
+        NSize {
+            x: self.0,
+            y: self.1,
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct Clickable;
+
+#[derive(Component)]
 pub struct Label {
     pub text: String,
 }
@@ -123,6 +149,7 @@ pub struct Label {
 pub struct ColoredLabelBundle {
     pub label: Label,
     pub position: NPosition,
+    pub size: NSize,
     pub color: NColor,
 }
 
@@ -130,6 +157,7 @@ pub struct ColoredLabelBundle {
 pub struct NormalLabelBundle {
     pub label: Label,
     pub position: NPosition,
+    pub size: NSize,
 }
 
 #[derive(Default)]
@@ -165,22 +193,62 @@ impl LabelBundle {
         self
     }
 
-    pub fn spawn(self, commands: &mut Commands) {
+    pub fn spawn<'a>(self, commands: &'a mut Commands) -> EntityCommands<'a> {
+        let text = self.text.unwrap_or_default();
+        let len = text.len() as u16;
         match self.color {
             None => commands.spawn(NormalLabelBundle {
-                label: Label {
-                    text: self.text.unwrap_or_default(),
-                },
+                label: Label { text },
                 position: self.position.unwrap_or_default(),
+                size: (len, 1).into(),
             }),
             Some(color) => commands.spawn(ColoredLabelBundle {
-                label: Label {
-                    text: self.text.unwrap_or_default(),
-                },
+                label: Label { text },
                 position: self.position.unwrap_or_default(),
+                size: (len, 1).into(),
                 color,
             }),
-        };
+        }
+    }
+
+    pub fn spawn_with<'a, T: Bundle>(
+        self,
+        commands: &'a mut Commands,
+        bundle: T,
+    ) -> EntityCommands<'a> {
+        let text = self.text.unwrap_or_default();
+        let len = text.len() as u16;
+        match self.color {
+            None => commands.spawn((
+                NormalLabelBundle {
+                    label: Label { text },
+                    position: self.position.unwrap_or_default(),
+                    size: (len, 1).into(),
+                },
+                bundle,
+            )),
+            Some(color) => commands.spawn((
+                ColoredLabelBundle {
+                    label: Label { text },
+                    position: self.position.unwrap_or_default(),
+                    size: (len, 1).into(),
+                    color,
+                },
+                bundle,
+            )),
+        }
+    }
+
+    pub fn spawn_as_button<'a>(self, commands: &'a mut Commands) -> EntityCommands<'a> {
+        self.spawn_with(commands, Clickable)
+    }
+
+    pub fn spawn_as_button_with<'a, T: Bundle>(
+        self,
+        commands: &'a mut Commands,
+        bundle: T,
+    ) -> EntityCommands<'a> {
+        self.spawn_with(commands, (Clickable, bundle))
     }
 }
 
@@ -241,8 +309,18 @@ impl Plugin for NcursesPlugin {
         window.clear();
         window.refresh();
         app.set_runner(ncurses_runner);
+        app.add_event::<ClickEvent>();
+        app.add_event::<InputEvent>();
         app.insert_resource(Window { window });
-        app.add_systems(PreUpdate, clear_window);
+        app.add_systems(
+            PreUpdate,
+            (
+                clear_window,
+                input_window,
+                click_event_trigger.after(input_window),
+            ),
+        );
+        app.add_systems(Update, update_label_size);
         app.add_systems(Last, refresh_window);
         app.add_systems(PostUpdate, draw_label);
     }
@@ -269,8 +347,50 @@ fn clear_window(window: Res<Window>) {
     window.clear();
 }
 
+fn input_window(window: Res<Window>, mut commands: Commands) {
+    if let Some(input) = window.getch() {
+        if let Input::KeyResize = input {
+            resize_term(0, 0);
+        } else {
+            commands.send_event(InputEvent { event: input });
+        }
+    }
+}
+
+fn check_bounds(mouse_pos: (i32, i32), pos: &NPosition, size: &NSize) -> bool {
+    mouse_pos.0 >= pos.x as i32
+        && mouse_pos.0 < (pos.x + size.x) as i32
+        && mouse_pos.1 >= pos.y as i32
+        && mouse_pos.1 < (pos.y + size.y) as i32
+}
+
+fn click_event_trigger(
+    query: Query<(Entity, &NPosition, &NSize, &Clickable)>,
+    mut events: EventReader<InputEvent>,
+    mut commands: Commands,
+) {
+    'events: for event in events.read() {
+        if let Input::KeyMouse = event.event {
+            if let Ok(mouse_event) = getmouse() {
+                for (entity, pos, size, _) in query.iter() {
+                    if check_bounds((mouse_event.x, mouse_event.y), pos, size) {
+                        commands.get_entity(entity).unwrap().trigger(ClickEvent);
+                        continue 'events;
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn refresh_window(window: Res<Window>) {
     window.refresh();
+}
+
+fn update_label_size(mut query: Query<(&Label, &mut NSize), Changed<Label>>) {
+    for (label, mut size) in query.iter_mut() {
+        size.x = label.text.len() as u16;
+    }
 }
 
 fn draw_label(query: Query<(&Label, &NPosition, Option<&NColor>)>, window: Res<Window>) {
