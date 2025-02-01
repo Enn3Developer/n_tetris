@@ -112,7 +112,7 @@ impl Into<NPosition> for (u16, u16) {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct NSize {
     pub x: u16,
     pub y: u16,

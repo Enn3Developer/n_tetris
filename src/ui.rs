@@ -1,4 +1,4 @@
-use crate::ncurses::{NColor, NPosition};
+use crate::ncurses::{NColor, NPosition, NSize};
 use bevy::prelude::{Bundle, Component};
 
 #[derive(Component)]
@@ -28,6 +28,7 @@ pub struct LabelBundle {
     label: Label,
     position: NPosition,
     color: NColor,
+    size: NSize,
 }
 
 impl LabelBundle {
@@ -39,6 +40,7 @@ impl LabelBundle {
     #[inline]
     pub fn with_text(mut self, text: impl Into<String>) -> Self {
         self.label = text.into().into();
+        self.size = (self.label.text.len() as u16, 1).into();
         self
     }
 
