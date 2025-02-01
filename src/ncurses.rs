@@ -1,7 +1,7 @@
 use bevy::app::App;
 use bevy::prelude::{
-    AppExit, Bundle, Changed, Commands, Component, Entity, EntityCommands, Event, EventReader,
-    IntoSystemConfigs, Last, Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update,
+    AppExit, Bundle, Changed, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs,
+    Last, Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update,
 };
 use pancurses::{
     chtype, curs_set, endwin, getmouse, has_colors, init_pair, initscr, mousemask, noecho,
@@ -140,119 +140,84 @@ impl Into<NSize> for (u16, u16) {
 #[derive(Component)]
 pub struct Clickable;
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct Label {
     pub text: String,
 }
 
-#[derive(Bundle)]
-pub struct ColoredLabelBundle {
-    pub label: Label,
-    pub position: NPosition,
-    pub size: NSize,
-    pub color: NColor,
+impl Label {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self { text: text.into() }
+    }
 }
 
-#[derive(Bundle)]
-pub struct NormalLabelBundle {
-    pub label: Label,
-    pub position: NPosition,
-    pub size: NSize,
+impl Into<Label> for String {
+    fn into(self) -> Label {
+        Label { text: self }
+    }
 }
 
-#[derive(Default)]
+#[derive(Default, Bundle)]
 pub struct LabelBundle {
-    text: Option<String>,
-    position: Option<NPosition>,
-    color: Option<NColor>,
+    label: Label,
+    position: NPosition,
+    color: NColor,
 }
 
 impl LabelBundle {
     #[inline]
     pub fn new(text: impl Into<String>, position: impl Into<NPosition>) -> Self {
-        Self::default()
-            .with_text(text.into())
-            .with_position(position.into())
+        Self::default().with_text(text).with_position(position)
     }
 
     #[inline]
-    pub fn with_text(mut self, text: String) -> Self {
-        self.text = Some(text);
+    pub fn with_text(mut self, text: impl Into<String>) -> Self {
+        self.label = text.into().into();
         self
     }
 
     #[inline]
-    pub fn with_position(mut self, position: NPosition) -> Self {
-        self.position = Some(position);
+    pub fn with_position(mut self, position: impl Into<NPosition>) -> Self {
+        self.position = position.into();
         self
     }
 
     #[inline]
-    pub fn with_color(mut self, color: NColor) -> Self {
-        self.color = Some(color);
+    pub fn with_color(mut self, color: impl Into<NColor>) -> Self {
+        self.color = color.into();
         self
-    }
-
-    pub fn spawn<'a>(self, commands: &'a mut Commands) -> EntityCommands<'a> {
-        let text = self.text.unwrap_or_default();
-        let len = text.len() as u16;
-        match self.color {
-            None => commands.spawn(NormalLabelBundle {
-                label: Label { text },
-                position: self.position.unwrap_or_default(),
-                size: (len, 1).into(),
-            }),
-            Some(color) => commands.spawn(ColoredLabelBundle {
-                label: Label { text },
-                position: self.position.unwrap_or_default(),
-                size: (len, 1).into(),
-                color,
-            }),
-        }
-    }
-
-    pub fn spawn_with<'a, T: Bundle>(
-        self,
-        commands: &'a mut Commands,
-        bundle: T,
-    ) -> EntityCommands<'a> {
-        let text = self.text.unwrap_or_default();
-        let len = text.len() as u16;
-        match self.color {
-            None => commands.spawn((
-                NormalLabelBundle {
-                    label: Label { text },
-                    position: self.position.unwrap_or_default(),
-                    size: (len, 1).into(),
-                },
-                bundle,
-            )),
-            Some(color) => commands.spawn((
-                ColoredLabelBundle {
-                    label: Label { text },
-                    position: self.position.unwrap_or_default(),
-                    size: (len, 1).into(),
-                    color,
-                },
-                bundle,
-            )),
-        }
-    }
-
-    pub fn spawn_as_button<'a>(self, commands: &'a mut Commands) -> EntityCommands<'a> {
-        self.spawn_with(commands, Clickable)
-    }
-
-    pub fn spawn_as_button_with<'a, T: Bundle>(
-        self,
-        commands: &'a mut Commands,
-        bundle: T,
-    ) -> EntityCommands<'a> {
-        self.spawn_with(commands, (Clickable, bundle))
     }
 }
 
-#[derive(Component, Copy, Clone)]
+#[derive(Bundle)]
+pub struct ButtonBundle {
+    pub label: LabelBundle,
+    clickable: Clickable,
+}
+
+impl ButtonBundle {
+    pub fn new(text: impl Into<String>, position: impl Into<NPosition>) -> Self {
+        Self {
+            label: LabelBundle::new(text, position),
+            clickable: Clickable,
+        }
+    }
+
+    pub fn new_with(label: LabelBundle) -> Self {
+        Self {
+            label,
+            clickable: Clickable,
+        }
+    }
+
+    #[inline]
+    pub fn with_color(mut self, color: impl Into<NColor>) -> Self {
+        self.label.color = color.into();
+        self
+    }
+}
+
+#[derive(Component, Copy, Clone, Default)]
 pub struct NColor {
     pub color: u8,
 }
@@ -271,6 +236,12 @@ impl Into<(Color, Color)> for NColor {
         let fg = (self.color & 7).into();
         let bg = ((self.color >> 4) & 7).into();
         (fg, bg)
+    }
+}
+
+impl Into<NColor> for (Color, Color) {
+    fn into(self) -> NColor {
+        NColor::new(self.0, self.1)
     }
 }
 
