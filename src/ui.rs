@@ -161,4 +161,9 @@ impl VBoxBundle {
         self.spacing = spacing.into();
         self
     }
+
+    pub fn with_local_position(mut self, position: impl Into<NLocalPosition>) -> Self {
+        self.local_position = position.into();
+        self
+    }
 }

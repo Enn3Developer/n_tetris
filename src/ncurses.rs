@@ -2,8 +2,7 @@ use crate::ui::{Clickable, Label, Padding, Spacing, VBox};
 use bevy::app::App;
 use bevy::prelude::{
     AppExit, Changed, Children, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs,
-    Last, Parent, Plugin, PostUpdate, PreUpdate, Query, Reflect, Res, Resource, Update, With,
-    Without,
+    Last, ParamSet, Parent, Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update, With,
 };
 pub use pancurses::Input;
 use pancurses::{
@@ -96,7 +95,7 @@ pub struct InputEvent {
     pub event: Input,
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone, Copy)]
 pub struct NPosition {
     pub x: u16,
     pub y: u16,
@@ -112,7 +111,7 @@ impl Into<NPosition> for (u16, u16) {
     }
 }
 
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Default)]
 pub struct NLocalPosition {
     pub x: u16,
     pub y: u16,
@@ -128,7 +127,7 @@ impl Into<NLocalPosition> for (u16, u16) {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Copy, Clone)]
 pub struct NSize {
     pub x: u16,
     pub y: u16,
@@ -244,7 +243,11 @@ impl Plugin for NcursesPlugin {
         app.add_systems(Update, update_label_size);
         app.add_systems(
             PostUpdate,
-            (draw_label, update_vbox_children.before(draw_label)),
+            (
+                update_vbox_children.before(draw_label),
+                update_vbox_size.after(update_vbox_children),
+                draw_label,
+            ),
         );
         app.add_systems(Last, refresh_window);
     }
@@ -339,28 +342,23 @@ fn draw_label(query: Query<(&Label, &NPosition, &NColor)>, window: Res<Window>) 
 }
 
 fn update_vbox_children(
-    mut query_p: Query<
-        (
-            &NPosition,
-            &mut NSize,
-            Option<&Padding>,
-            Option<&Spacing>,
-            &Children,
-        ),
-        With<VBox>,
-    >,
-    mut query_c: Query<(&NLocalPosition, &mut NPosition, &NSize), (With<Parent>, Without<VBox>)>,
+    mut param_set: ParamSet<(
+        Query<(&NPosition, Option<&Padding>, Option<&Spacing>, &Children), With<VBox>>,
+        Query<(&NLocalPosition, &mut NPosition, &NSize), With<Parent>>,
+    )>,
 ) {
-    for (position, mut p_size, maybe_padding, maybe_spacing, children) in query_p.iter_mut() {
+    let mut vboxes = vec![];
+    for (position, maybe_padding, maybe_spacing, children) in param_set.p0().iter() {
         let padding = maybe_padding.map(|p| p.0).unwrap_or_default();
         let spacing = maybe_spacing.map(|s| s.0).unwrap_or_default();
+        vboxes.push((*position, padding, spacing, children.to_vec()));
+    }
+
+    for (position, padding, spacing, children) in vboxes {
         let mut height = padding;
-        let mut size: NSize = (0, 0).into();
         for child in children {
-            let (c_local_position, mut c_position, c_size) = query_c.get_mut(*child).unwrap();
-            if size.x < c_size.x {
-                size.x = c_size.x;
-            }
+            let mut p1 = param_set.p1();
+            let (c_local_position, mut c_position, c_size) = p1.get_mut(child).unwrap();
             let pos: NPosition = (
                 c_local_position.x + position.x + padding,
                 height + c_local_position.y + position.y,
@@ -369,8 +367,28 @@ fn update_vbox_children(
             *c_position = pos;
             height += c_size.y + spacing;
         }
-        size.x += padding;
-        size.y = height + padding;
-        *p_size = size;
+    }
+}
+
+fn update_vbox_size(
+    mut param_set: ParamSet<(
+        Query<(&NPosition, &NSize, &Parent)>,
+        Query<(&mut NSize, &NPosition, Option<&Padding>), (With<VBox>, With<Children>)>,
+    )>,
+) {
+    let mut children = vec![];
+    for (position, size, parent) in param_set.p0().iter() {
+        children.push((*position, *size, parent.get()));
+    }
+    for (c_position, c_size, parent) in children {
+        let mut p1 = param_set.p1();
+        let (mut size, position, maybe_padding) = p1.get_mut(parent).unwrap();
+        let padding = maybe_padding.map(|p| p.0).unwrap_or_default();
+        if size.x < c_size.x + padding {
+            size.x = c_size.x + padding;
+        }
+        if size.y < (c_position.y as i32 - position.y as i32).abs() as u16 + padding {
+            size.y = (c_position.y as i32 - position.y as i32).abs() as u16 + padding;
+        }
     }
 }
