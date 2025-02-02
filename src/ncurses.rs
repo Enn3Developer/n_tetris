@@ -250,10 +250,10 @@ impl Plugin for NcursesPlugin {
                 click_event_trigger.after(input_window),
             ),
         );
-        app.add_systems(Update, update_label_size);
         app.add_systems(
             PostUpdate,
             (
+                update_label_size.before(update_vbox_children),
                 update_vbox_children.before(draw_label),
                 update_vbox_size.after(update_vbox_children),
                 draw_label,
