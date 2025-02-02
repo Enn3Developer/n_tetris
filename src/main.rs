@@ -1,7 +1,7 @@
 use bevy::app::Startup;
-use bevy::prelude::{App, Commands, Trigger};
+use bevy::prelude::{App, BuildChildren, ChildBuild, Commands, Trigger};
 use n_tetris::ncurses::{ClickEvent, Color, NcursesPlugin};
-use n_tetris::ui::{ButtonBundle, LabelBundle};
+use n_tetris::ui::{ButtonBundle, LabelBundle, VBoxBundle};
 
 fn main() {
     App::new()
@@ -11,11 +11,15 @@ fn main() {
 }
 
 fn create_label(mut commands: Commands) {
-    commands.spawn(LabelBundle::new("Hello world", (10, 10)));
     commands
-        .spawn(ButtonBundle::new("Hello world clickable", (10, 11)))
-        .observe(|_trigger: Trigger<ClickEvent>| panic!("clicked"));
-    commands.spawn(
-        LabelBundle::new("Hello world colored", (10, 12)).with_color((Color::Red, Color::White)),
-    );
+        .spawn(VBoxBundle::new((2, 1)))
+        .with_children(|parent| {
+            parent.spawn(LabelBundle::new_text("Hello world"));
+            parent
+                .spawn(ButtonBundle::new_text("Hello world clickable"))
+                .observe(|_trigger: Trigger<ClickEvent>| panic!("clicked"));
+            parent.spawn(
+                LabelBundle::new_text("Hello world colored").with_color((Color::Red, Color::White)),
+            );
+        });
 }

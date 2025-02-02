@@ -1,16 +1,16 @@
+use crate::ui::{Clickable, Label, Padding, Spacing, VBox};
 use bevy::app::App;
 use bevy::prelude::{
-    AppExit, Changed, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs, Last,
-    Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update,
+    AppExit, Changed, Children, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs,
+    Last, Parent, Plugin, PostUpdate, PreUpdate, Query, Reflect, Res, Resource, Update, With,
+    Without,
 };
+pub use pancurses::Input;
 use pancurses::{
     chtype, curs_set, endwin, getmouse, has_colors, init_pair, initscr, mousemask, noecho,
     resize_term, start_color, ToChtype, COLOR_PAIR,
 };
 use std::ops::{Deref, DerefMut};
-
-use crate::ui::{Clickable, Label};
-pub use pancurses::Input;
 
 #[derive(Debug)]
 pub enum Color {
@@ -106,6 +106,22 @@ impl Into<NPosition> for (u16, u16) {
     #[inline]
     fn into(self) -> NPosition {
         NPosition {
+            x: self.0,
+            y: self.1,
+        }
+    }
+}
+
+#[derive(Component, Default, Reflect)]
+pub struct NLocalPosition {
+    pub x: u16,
+    pub y: u16,
+}
+
+impl Into<NLocalPosition> for (u16, u16) {
+    #[inline]
+    fn into(self) -> NLocalPosition {
+        NLocalPosition {
             x: self.0,
             y: self.1,
         }
@@ -226,8 +242,11 @@ impl Plugin for NcursesPlugin {
             ),
         );
         app.add_systems(Update, update_label_size);
+        app.add_systems(
+            PostUpdate,
+            (draw_label, update_vbox_children.before(draw_label)),
+        );
         app.add_systems(Last, refresh_window);
-        app.add_systems(PostUpdate, draw_label);
     }
 }
 
@@ -316,5 +335,42 @@ fn draw_label(query: Query<(&Label, &NPosition, &NColor)>, window: Res<Window>) 
         if is_bold(color.into()) {
             window.attroff(pancurses::A_BOLD);
         }
+    }
+}
+
+fn update_vbox_children(
+    mut query_p: Query<
+        (
+            &NPosition,
+            &mut NSize,
+            Option<&Padding>,
+            Option<&Spacing>,
+            &Children,
+        ),
+        With<VBox>,
+    >,
+    mut query_c: Query<(&NLocalPosition, &mut NPosition, &NSize), (With<Parent>, Without<VBox>)>,
+) {
+    for (position, mut p_size, maybe_padding, maybe_spacing, children) in query_p.iter_mut() {
+        let padding = maybe_padding.map(|p| p.0).unwrap_or_default();
+        let spacing = maybe_spacing.map(|s| s.0).unwrap_or_default();
+        let mut height = padding;
+        let mut size: NSize = (0, 0).into();
+        for child in children {
+            let (c_local_position, mut c_position, c_size) = query_c.get_mut(*child).unwrap();
+            if size.x < c_size.x {
+                size.x = c_size.x;
+            }
+            let pos: NPosition = (
+                c_local_position.x + position.x + padding,
+                height + c_local_position.y + position.y,
+            )
+                .into();
+            *c_position = pos;
+            height += c_size.y + spacing;
+        }
+        size.x += padding;
+        size.y = height + padding;
+        *p_size = size;
     }
 }
