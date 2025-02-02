@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.15.1", default-features = false, features = ["bevy_core_pipeline", "bevy_state", ] }
 pancurses = "0.17.0"
+terminal_size = "0.4.1"

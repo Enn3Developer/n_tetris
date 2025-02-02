@@ -2,7 +2,8 @@ use crate::ui::{Clickable, Label, Padding, Spacing, VBox};
 use bevy::app::App;
 use bevy::prelude::{
     AppExit, Changed, Children, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs,
-    Last, ParamSet, Parent, Plugin, PostUpdate, PreUpdate, Query, Res, Resource, Update, With,
+    Last, ParamSet, Parent, Plugin, PostUpdate, PreUpdate, Query, Res, ResMut, Resource, Update,
+    With,
 };
 pub use pancurses::Input;
 use pancurses::{
@@ -10,6 +11,7 @@ use pancurses::{
     resize_term, start_color, ToChtype, COLOR_PAIR,
 };
 use std::ops::{Deref, DerefMut};
+use terminal_size::{Height, Width};
 
 #[derive(Debug)]
 pub enum Color {
@@ -86,6 +88,12 @@ impl Drop for Window {
 
 unsafe impl Sync for Window {}
 unsafe impl Send for Window {}
+
+#[derive(Resource)]
+pub struct WindowSize {
+    pub width: u16,
+    pub height: u16,
+}
 
 #[derive(Event)]
 pub struct ClickEvent;
@@ -215,6 +223,7 @@ pub struct NcursesPlugin;
 
 impl Plugin for NcursesPlugin {
     fn build(&self, app: &mut App) {
+        let (Width(width), Height(height)) = terminal_size::terminal_size().unwrap();
         let window = initscr();
         noecho();
         window.nodelay(true);
@@ -232,6 +241,7 @@ impl Plugin for NcursesPlugin {
         app.add_event::<ClickEvent>();
         app.add_event::<InputEvent>();
         app.insert_resource(Window { window });
+        app.insert_resource(WindowSize { width, height });
         app.add_systems(
             PreUpdate,
             (
@@ -274,10 +284,13 @@ fn clear_window(window: Res<Window>) {
     window.clear();
 }
 
-fn input_window(window: Res<Window>, mut commands: Commands) {
+fn input_window(window: Res<Window>, mut window_size: ResMut<WindowSize>, mut commands: Commands) {
     if let Some(input) = window.getch() {
         if let Input::KeyResize = input {
             resize_term(0, 0);
+            let (Width(width), Height(height)) = terminal_size::terminal_size().unwrap();
+            window_size.width = width;
+            window_size.height = height;
         } else {
             commands.send_event(InputEvent { event: input });
         }
