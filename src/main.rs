@@ -15,11 +15,7 @@ fn create_label(mut commands: Commands) {
         .spawn(VBoxBundle::new((2, 1)))
         .with_children(|parent| {
             parent
-                .spawn(
-                    VBoxBundle::default()
-                        .with_local_position((10, 10))
-                        .with_spacing(5),
-                )
+                .spawn(VBoxBundle::default().with_local_position((10, 10)))
                 .with_children(|parent| {
                     parent.spawn(LabelBundle::new_text("Hello world"));
                     parent

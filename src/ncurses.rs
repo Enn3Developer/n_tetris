@@ -2,8 +2,7 @@ use crate::ui::{Clickable, Label, Padding, Spacing, VBox};
 use bevy::app::App;
 use bevy::prelude::{
     AppExit, Changed, Children, Commands, Component, Entity, Event, EventReader, IntoSystemConfigs,
-    Last, ParamSet, Parent, Plugin, PostUpdate, PreUpdate, Query, Res, ResMut, Resource, Update,
-    With,
+    Last, ParamSet, Parent, Plugin, PostUpdate, PreUpdate, Query, Res, ResMut, Resource, With,
 };
 pub use pancurses::Input;
 use pancurses::{
@@ -102,6 +101,9 @@ pub struct ClickEvent;
 pub struct InputEvent {
     pub event: Input,
 }
+
+#[derive(Event)]
+pub struct ResizeEvent;
 
 #[derive(Component, Default, Clone, Copy)]
 pub struct NPosition {
@@ -240,6 +242,7 @@ impl Plugin for NcursesPlugin {
         app.set_runner(ncurses_runner);
         app.add_event::<ClickEvent>();
         app.add_event::<InputEvent>();
+        app.add_event::<ResizeEvent>();
         app.insert_resource(Window { window });
         app.insert_resource(WindowSize { width, height });
         app.add_systems(
@@ -291,6 +294,7 @@ fn input_window(window: Res<Window>, mut window_size: ResMut<WindowSize>, mut co
             let (Width(width), Height(height)) = terminal_size::terminal_size().unwrap();
             window_size.width = width;
             window_size.height = height;
+            commands.send_event(ResizeEvent);
         } else {
             commands.send_event(InputEvent { event: input });
         }
